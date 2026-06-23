@@ -1,24 +1,17 @@
 name: frontend
 
 on:
-  push:
-    branches-ignore:
-      - 'dependabot/**'
-  pull_request:
-    branches:
-      - master
-      - 'branch-*'
-
+  workflow_dispatch:
 env:
   # Disable keepAlive and pool
   # https://github.com/actions/virtual-environments/issues/1499#issuecomment-689467080
   MAVEN_OPTS: >-
-      -Xms1024M -Xmx2048M -XX:MaxMetaspaceSize=1024m -XX:-UseGCOverheadLimit
-      -Dhttp.keepAlive=false
-      -Dmaven.wagon.http.pool=false
-      -Dmaven.wagon.http.retryHandler.count=3
+    -Xms1024M -Xmx2048M -XX:MaxMetaspaceSize=1024m -XX:-UseGCOverheadLimit
+    -Dhttp.keepAlive=false
+    -Dmaven.wagon.http.pool=false
+    -Dmaven.wagon.http.retryHandler.count=3
   MAVEN_ARGS: >-
-      -B --no-transfer-progress
+    -B --no-transfer-progress
   ZEPPELIN_HELIUM_REGISTRY: helium
   SPARK_PRINT_LAUNCH_COMMAND: "true"
   SPARK_LOCAL_IP: 127.0.0.1
@@ -52,10 +45,10 @@ jobs:
       - name: Tune Runner VM
         uses: ./.github/actions/tune-runner-vm
       - name: Set up JDK 11
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
-          java-version: 11
+          java-version: ${{ matrix.java }}
       - name: Cache local Maven repository
         uses: actions/cache@v4
         with:
@@ -75,6 +68,14 @@ jobs:
         if: always()
         run: if [ -d "logs" ]; then cat logs/*; fi
 
+    strategy:
+      matrix:
+        java:
+          - 16
+          - 17
+          - 21
+          - 25
+      fail-fast: false
   run-playwright-e2e-tests:
     runs-on: ubuntu-24.04
     env:
@@ -83,17 +84,23 @@ jobs:
     strategy:
       matrix:
         mode: [anonymous, auth]
-        python: [ 3.9 ]
+        python: [3.9]
+        java:
+          - 16
+          - 17
+          - 21
+          - 25
+      fail-fast: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Tune Runner VM
         uses: ./.github/actions/tune-runner-vm
       - name: Set up JDK 11
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
-          java-version: 11
+          java-version: ${{ matrix.java }}
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
@@ -169,10 +176,10 @@ jobs:
       - name: Tune Runner VM
         uses: ./.github/actions/tune-runner-vm
       - name: Set up JDK 11
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
-          java-version: 11
+          java-version: ${{ matrix.java }}
       - name: Cache local Maven repository
         uses: actions/cache@v4
         with:
@@ -210,3 +217,11 @@ jobs:
       - name: Print zeppelin logs
         if: always()
         run: if [ -d "logs" ]; then cat logs/*; fi
+    strategy:
+      matrix:
+        java:
+          - 16
+          - 17
+          - 21
+          - 25
+      fail-fast: false
