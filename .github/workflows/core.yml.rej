@@ -1,0 +1,143 @@
+@@ -1,133 +1,134 @@
+ name: core
+ 
+ on:
+   workflow_dispatch:
+ env:
+   # Disable keepAlive and pool
+   # https://github.com/actions/virtual-environments/issues/1499#issuecomment-689467080
+   MAVEN_OPTS: >-
+     -Xms1024M -Xmx2048M -XX:MaxMetaspaceSize=1024m -XX:-UseGCOverheadLimit
+     -Dhttp.keepAlive=false
+     -Dmaven.wagon.http.pool=false
+     -Dmaven.wagon.http.retryHandler.count=3
+   MAVEN_ARGS: >-
+     -B --no-transfer-progress
+   ZEPPELIN_HELIUM_REGISTRY: helium
+   SPARK_PRINT_LAUNCH_COMMAND: "true"
+   SPARK_LOCAL_IP: 127.0.0.1
+   ZEPPELIN_LOCAL_IP: 127.0.0.1
+ 
+ # Use the bash login, because we are using miniconda
+   _JAVA_OPTIONS: --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.lang.invoke=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.base/java.math=ALL-UNNAMED --add-opens java.base/java.time=ALL-UNNAMED --add-opens java.xml/jdk.xml.internal=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED
++  JVM_OPENS: --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.lang.invoke=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.base/java.math=ALL-UNNAMED --add-opens java.base/java.time=ALL-UNNAMED --add-opens java.xml/jdk.xml.internal=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED --add-opens jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED
+ defaults:
+   run:
+     shell: bash -l {0}
+ 
+ permissions:
+   contents: read # to fetch code (actions/checkout)
+ 
+ jobs:
+   # test on core-modules (zeppelin-interpreter,zeppelin-server),
+   # some interpreters are included, because zeppelin-server test depends on them: spark, shell & markdown
+   core-modules:
+     runs-on: ubuntu-24.04
+     strategy:
+       fail-fast: false
+       matrix:
+         java:
+         - 16
+         - 17
+         - 21
+-        - 25
++        - 21
+     steps:
+     - name: Checkout
+       uses: actions/checkout@v4
+     - name: Tune Runner VM
+       uses: ./.github/actions/tune-runner-vm
+     - name: Set up JDK ${{ matrix.java }}
+       uses: actions/setup-java@v5
+       with:
+         distribution: 'temurin'
+         java-version: ${{ matrix.java }}
+     - name: Cache local Maven repository
+       uses: actions/cache@v4
+       with:
+         path: |
+           ~/.m2/repository
+           !~/.m2/repository/org/apache/zeppelin/
+           ~/.spark-dist
+           ~/.cache
+           ~/conda_pkgs_dir
+         key: ${{ runner.os }}-zeppelin-${{ hashFiles('**/pom.xml') }}
+         restore-keys: |
+           ${{ runner.os }}-zeppelin-
+     - name: install application with some interpreter
+-      run: ./mvnw install -Pbuild-distr -DskipTests -pl zeppelin-server,zeppelin-web,spark-submit,spark/scala-2.12,spark/scala-2.13,markdown,angular,shell -am -Pweb-classic -Phelium-dev -Pexamples ${MAVEN_ARGS}
++      run: ./mvnw install -Pbuild-distr -DskipTests -pl zeppelin-server,zeppelin-web,spark-submit,spark/scala-2.12,spark/scala-2.13,markdown,angular,shell -am -Pweb-classic -Phelium-dev -Pexamples ${MAVEN_ARGS} -Dmaven.compiler.release=${{ matrix.java <= 17 && matrix.java || '17' }}
+     - name: install and test plugins
+-      run: ./mvnw package -pl zeppelin-plugins -amd ${MAVEN_ARGS}
++      run: ./mvnw package -pl zeppelin-plugins -amd ${MAVEN_ARGS} -Dmaven.compiler.release=${{ matrix.java <= 17 && matrix.java || '17' }}
+     - name: Setup conda environment with python 3.9 and R
+       uses: conda-incubator/setup-miniconda@v3
+       with:
+         activate-environment: python_3_with_R
+         environment-file: testing/env_python_3.9_with_R.yml
+         python-version: 3.9
+         channels: conda-forge,defaults
+         channel-priority: strict
+         auto-activate: false
+         use-mamba: true
+     - name: Make IRkernel available to Jupyter
+       run: |
+         R -e "IRkernel::installspec()"
+         conda list
+         conda info
+     - name: run tests   # skip spark test because we would run them in other CI
+-      run: ./mvnw verify -Pusing-packaged-distr -pl zeppelin-server,zeppelin-web,spark-submit,spark/scala-2.12,spark/scala-2.13,markdown,angular,shell -am -Pweb-classic -Phelium-dev -Pexamples -Dtests.to.exclude=**/org/apache/zeppelin/spark/* -DfailIfNoTests=false
++      run: ./mvnw verify -Pusing-packaged-distr -pl zeppelin-server,zeppelin-web,spark-submit,spark/scala-2.12,spark/scala-2.13,markdown,angular,shell -am -Pweb-classic -Phelium-dev -Pexamples -Dtests.to.exclude=**/org/apache/zeppelin/spark/* -DfailIfNoTests=false -Dmaven.compiler.release=${{ matrix.java <= 17 && matrix.java || '17' }} -Dsurefire.argLine="${JVM_OPENS}"
+ 
+   # test interpreter modules except spark, flink, python, rlang, jupyter
+   interpreter-test-non-core:
+     runs-on: ubuntu-24.04
+     strategy:
+       fail-fast: false
+       matrix:
+         java:
+         - 16
+         - 17
+         - 21
+-        - 25
++        - 21
+     env:
+       INTERPRETERS: 'hbase,jdbc,file,flink-cmd,cassandra,elasticsearch,bigquery,livy,groovy,java,neo4j,sparql,mongodb,influxdb,shell'
+     steps:
+     - name: Checkout
+       uses: actions/checkout@v4
+     - name: Tune Runner VM
+       uses: ./.github/actions/tune-runner-vm
+     - name: Set up JDK ${{ matrix.java }}
+       uses: actions/setup-java@v5
+       with:
+         distribution: 'temurin'
+         java-version: ${{ matrix.java }}
+     - name: Cache local Maven repository
+       uses: actions/cache@v4
+       with:
+         path: |
+           ~/.m2/repository
+           !~/.m2/repository/org/apache/zeppelin/
+           ~/.spark-dist
+           ~/.cache
+         key: ${{ runner.os }}-zeppelin-${{ hashFiles('**/pom.xml') }}
+         restore-keys: |
+           ${{ runner.os }}-zeppelin-
+     - name: install environment
+-      run: ./mvnw install -DskipTests -am -pl ${INTERPRETERS} ${MAVEN_ARGS}
++      run: ./mvnw install -DskipTests -am -pl ${INTERPRETERS} ${MAVEN_ARGS} -Dmaven.compiler.release=${{ matrix.java <= 17 && matrix.java || '17' }}
+     - name: Setup conda environment with python 3.9 and R
+       uses: conda-incubator/setup-miniconda@v3
+       with:
+         activate-environment: python_3_with_R_and_tensorflow
+         environment-file: testing/env_python_3_with_R_and_tensorflow.yml
+         python-version: 3.9
+         channels: conda-forge,defaults
+         channel-priority: strict
+         auto-activate: false
+         use-mamba: true
+     - name: verify interpreter
+-      run: ./mvnw verify -am -pl ${INTERPRETERS} ${MAVEN_ARGS}
++      run: ./mvnw verify -am -pl ${INTERPRETERS} ${MAVEN_ARGS} -Dmaven.compiler.release=${{ matrix.java <= 17 && matrix.java || '17' }} -Dsurefire.argLine="${JVM_OPENS}"
+\ No newline at end of line
